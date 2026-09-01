@@ -1,7 +1,7 @@
 {
   "name": "magic-resume",
   "productName": "Magic Resume",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "一款注重隐私的本地简历编辑与导出工具",
   "author": "Magic Resume Contributors",
   "private": true,

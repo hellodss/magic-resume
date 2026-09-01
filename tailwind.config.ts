@@ -23,7 +23,7 @@ const config = {
     },
     extend: {
       fontFamily: {
-        serif: ["Newsreader", "serif"],
+        serif: ["Source Han Serif SC", "Georgia", "serif"],
         sans: ["Inter", "system-ui", "sans-serif"],
       },
       colors: {

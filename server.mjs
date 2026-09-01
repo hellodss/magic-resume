@@ -1,5 +1,4 @@
 import { createServer } from "node:http";
-import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import {
   dirname,
@@ -47,6 +46,7 @@ const CONTENT_SECURITY_POLICY_DIRECTIVES = [
   "frame-ancestors 'none'",
   "img-src 'self' data: blob: https:",
   "object-src 'none'",
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "worker-src 'self' blob:",
 ];
@@ -84,36 +84,15 @@ function resolveStaticFile(pathname, clientDir) {
 
 async function applySecurityHeaders(response) {
   const headers = new Headers(response.headers);
-  let body = response.body;
-  const scriptSources = new Set(["'self'"]);
-
-  if (headers.get("Content-Type")?.includes("text/html") && response.body) {
-    const html = await response.text();
-    body = html;
-    headers.delete("Content-Length");
-
-    const inlineScriptPattern =
-      /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi;
-    for (const match of html.matchAll(inlineScriptPattern)) {
-      const digest = createHash("sha256")
-        .update(match[1] ?? "")
-        .digest("base64");
-      scriptSources.add(`'sha256-${digest}'`);
-    }
-  }
-
   headers.set(
     "Content-Security-Policy",
-    [
-      ...CONTENT_SECURITY_POLICY_DIRECTIVES,
-      `script-src ${[...scriptSources].join(" ")}`,
-    ].join("; "),
+    CONTENT_SECURITY_POLICY_DIRECTIVES.join("; "),
   );
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
 
-  return new Response(body, {
+  return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
