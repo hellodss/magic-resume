@@ -11,7 +11,7 @@ export default defineConfig({
     exclude: ["pdfjs-dist"]
   },
   ssr: {
-    noExternal: ["pdfjs-dist"]
+    noExternal: true
   },
   plugins: [
     tsconfigPaths(),

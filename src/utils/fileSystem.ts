@@ -6,6 +6,12 @@ const DB_VERSION = 2;
 
 let db: IDBDatabase | null = null;
 
+type FileSystemPermissionMode = "read" | "readwrite";
+type PermissionCapableHandle = FileSystemHandle & {
+  queryPermission: (options: { mode: FileSystemPermissionMode }) => Promise<PermissionState>;
+  requestPermission: (options: { mode: FileSystemPermissionMode }) => Promise<PermissionState>;
+};
+
 const initDB = (): Promise<void> => {
   return new Promise((resolve, reject) => {
     if (db) {
@@ -39,9 +45,10 @@ export const storeFileHandle = async (
 ): Promise<void> => {
   await initDB();
   if (!db) throw new Error("Database not initialized");
+  const database = db;
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(HANDLE_STORE, "readwrite");
+    const transaction = database.transaction(HANDLE_STORE, "readwrite");
     const store = transaction.objectStore(HANDLE_STORE);
     const request = store.put(handle, key);
 
@@ -55,9 +62,10 @@ export const getFileHandle = async (
 ): Promise<FileSystemHandle | null> => {
   await initDB();
   if (!db) throw new Error("Database not initialized");
+  const database = db;
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(HANDLE_STORE, "readonly");
+    const transaction = database.transaction(HANDLE_STORE, "readonly");
     const store = transaction.objectStore(HANDLE_STORE);
     const request = store.get(key);
 
@@ -69,9 +77,10 @@ export const getFileHandle = async (
 export const storeConfig = async (key: string, value: any): Promise<void> => {
   await initDB();
   if (!db) throw new Error("Database not initialized");
+  const database = db;
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(CONFIG_STORE, "readwrite");
+    const transaction = database.transaction(CONFIG_STORE, "readwrite");
     const store = transaction.objectStore(CONFIG_STORE);
     const request = store.put(value, key);
 
@@ -83,9 +92,10 @@ export const storeConfig = async (key: string, value: any): Promise<void> => {
 export const getConfig = async (key: string): Promise<any> => {
   await initDB();
   if (!db) throw new Error("Database not initialized");
+  const database = db;
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(CONFIG_STORE, "readonly");
+    const transaction = database.transaction(CONFIG_STORE, "readonly");
     const store = transaction.objectStore(CONFIG_STORE);
     const request = store.get(key);
 
@@ -103,14 +113,22 @@ export const verifyPermission = async (
   }
 
   const options = { mode };
+  const permissionHandle = handle as PermissionCapableHandle;
+
+  if (
+    typeof permissionHandle.queryPermission !== "function" ||
+    typeof permissionHandle.requestPermission !== "function"
+  ) {
+    return true;
+  }
 
   // 检查当前权限
-  if ((await handle.queryPermission(options)) === "granted") {
+  if ((await permissionHandle.queryPermission(options)) === "granted") {
     return true;
   }
 
   // 请求权限
-  if ((await handle.requestPermission(options)) === "granted") {
+  if ((await permissionHandle.requestPermission(options)) === "granted") {
     return true;
   }
 

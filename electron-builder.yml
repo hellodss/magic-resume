@@ -1,0 +1,46 @@
+appId: com.magicresume.desktop
+productName: Magic Resume
+artifactName: ${productName}-${version}-${arch}.${ext}
+asar: true
+electronLanguages:
+  - en-US
+  - zh-CN
+
+directories:
+  output: release
+
+files:
+  - desktop/**/*
+  - dist/**/*
+  - public/icon.png
+  - server.mjs
+  - package.json
+  - LICENSE
+  - "!node_modules/**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: public/favicon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Magic Resume
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - dmg
+  icon: public/icon.png
+  category: public.app-category.productivity
+
+linux:
+  target:
+    - AppImage
+  icon: public/icon.png
+  category: Office

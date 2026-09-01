@@ -1,9 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/i18n/compat/client";
-import { Streamdown } from "streamdown";
-import "streamdown/styles.css";
 import { createMarkdownExit } from "markdown-exit";
 import TurndownService from "turndown";
 
@@ -21,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAIConfigStore } from "@/store/useAIConfigStore";
 import { AI_MODEL_CONFIGS } from "@/config/ai";
 import { cn } from "@/lib/utils";
+import { normalizeRichTextContent } from "@/lib/richText";
 
 interface AIPolishDialogProps {
   open: boolean;
@@ -67,6 +66,14 @@ export default function AIPolishDialog({
   } = useAIConfigStore();
   const abortControllerRef = useRef<AbortController | null>(null);
   const polishedContentRef = useRef<HTMLDivElement>(null);
+  const originalPreviewHtml = useMemo(
+    () => normalizeRichTextContent(content),
+    [content]
+  );
+  const polishedPreviewHtml = useMemo(
+    () => normalizeRichTextContent(md.render(polishedContent)),
+    [polishedContent]
+  );
 
   const getPolishErrorMessage = async (response: Response) => {
     const fallback = `${t("error.polishFailed")} (${response.status})`;
@@ -219,7 +226,7 @@ export default function AIPolishDialog({
   };
 
   const handleApply = () => {
-    const htmlContent = md.render(polishedContent);
+    const htmlContent = normalizeRichTextContent(md.render(polishedContent));
     onApply(htmlContent);
     handleClose();
     toast.success(t("error.applied"));
@@ -332,14 +339,10 @@ export default function AIPolishDialog({
                 "p-6 h-[400px] overflow-auto shadow-sm"
               )}
             >
-              <Streamdown
-                className={cn(
-                  "prose dark:prose-invert max-w-none",
-                  "text-neutral-700 dark:text-neutral-300"
-                )}
-              >
-                {turndownService.turndown(content)}
-              </Streamdown>
+              <div
+                className="prose dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300"
+                dangerouslySetInnerHTML={{ __html: originalPreviewHtml }}
+              />
             </div>
           </div>
 
@@ -369,16 +372,11 @@ export default function AIPolishDialog({
                 "p-6 h-[400px] overflow-auto shadow-sm scroll-smooth"
               )}
             >
-              <Streamdown
-                animated
-                isAnimating={isPolishing}
-                className={cn(
-                  "prose dark:prose-invert max-w-none",
-                  "text-neutral-800 dark:text-neutral-200"
-                )}
-              >
-                {polishedContent}
-              </Streamdown>
+              <div
+                className="prose dark:prose-invert max-w-none text-neutral-800 dark:text-neutral-200"
+                aria-busy={isPolishing}
+                dangerouslySetInnerHTML={{ __html: polishedPreviewHtml }}
+              />
             </div>
           </div>
         </div>

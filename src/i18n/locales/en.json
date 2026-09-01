@@ -2,7 +2,7 @@
   "common": {
     "title": "Magic Resume",
     "subtitle": "AI Driven Resume Editor",
-    "description": "Magic Resume is an open source resume editor, free, privacy-first. No registration required, all data stored locally, support data backup and export, ensuring your resume data is always available.",
+    "description": "Magic Resume is a free, privacy-first resume editor. No account is required and resumes are stored locally by default. Content is sent externally only when you use AI or confirm Cloud PDF.",
     "dashboard": "Dashboard",
     "edit": "Edit",
     "delete": "Delete",
@@ -48,7 +48,7 @@
       "storage": {
         "badge": "Local Storage",
         "title": "Data Security, Privacy First",
-        "description": "All resume data is fully stored locally, no need to worry about privacy leaks. Support data export backup, ensure your resume data is always available.",
+        "description": "Resumes are stored locally by default and can be exported for backup. Data transfers are disclosed before AI or Cloud PDF features are used.",
         "item1": "Local file storage",
         "item1_description": "Resume data securely stored on your computer's hard drive",
         "item2": "Multiple export formats",
@@ -84,7 +84,7 @@
         },
         {
           "question": "Is my resume data secure?",
-          "answer": "Yes, very secure. Magic Resume uses local storage, meaning all your data is stored on your own device with no cloud storage, ensuring complete privacy protection."
+          "answer": "Resumes are stored on your device by default, with no account or cloud storage required. Content is sent to a third-party service only when you use AI or explicitly confirm Cloud PDF export."
         },
         {
           "question": "What export formats are supported?",
@@ -261,21 +261,22 @@
     "modal": {
       "title": "Export Resume",
       "subtitle": "Select the format you want to export your resume",
-      "pdfDesc": "High-precision rendering with 100% format accuracy. Recommended for job applications.",
-      "printDesc": "Save via system print dialog. Use as a fallback or for custom margins.",
+      "pdfDesc": "Sends the resume to a remote rendering service. Use when local printing does not preserve the layout.",
+      "printDesc": "Recommended. Save through the browser print dialog without uploading the resume.",
       "jsonDesc": "Export your resume data as JSON to backup or transfer between devices.",
       "markdownDesc": "Convert to plain Markdown text for easy sharing with AI models.",
-      "privacyNotice": "Magic Resume promise never to collect, upload, or store any of your resume data. Your privacy is fully protected."
+      "privacyNotice": "Local PDF, JSON, and Markdown exports do not upload your resume. Cloud PDF sends it only after confirmation.",
+      "remoteConsent": "Cloud PDF sends this resume to api.magicv.art for rendering. Continue?"
     },
     "button": {
       "export": "Export",
-      "exportPdf": "Export PDF (Server)",
+      "exportPdf": "Cloud PDF",
       "exportJson": "Export JSON Config",
       "exportMarkdown": "Export Markdown",
       "exporting": "Exporting...",
       "exportingJson": "Exporting...",
       "exportingMarkdown": "Exporting...",
-      "print": "Browser Print"
+      "print": "Local PDF (Recommended)"
     },
     "toast": {
       "success": "PDF exported successfully",
@@ -808,11 +809,11 @@
       },
       "export-failure": {
         "question": "What if export fails or style is broken?",
-        "answer": "1. We recommend using Google Chrome (https://www.google.cn/intl/zh-CN/chrome/) for best compatibility.\n2. If it still fails, try in 'Incognito Mode' to exclude extension interference.\n3. Alternatively, click 'PDF (Backup)' in the export menu and select 'Save as PDF' in the print dialog."
+        "answer": "1. Use the latest Chrome or Edge.\n2. Prefer Local PDF and choose 'Save as PDF' in the print dialog.\n3. If the layout is still incorrect, use Cloud PDF after reviewing its data-transfer notice."
       },
       "export-methods": {
         "question": "What's the difference between the two export methods?",
-        "answer": "• Export PDF: Uses a backend service for high-precision rendering, 100% restoring the layout. Recommended for formal submission to HR.\n\n• Browser Print: Invokes your current browser's native print function (Save as PDF). Suitable when the backend export service is busy or you need to fine-tune print margins via your browser."
+        "answer": "• Local PDF (recommended): Uses the browser print dialog and does not upload the resume.\n\n• Cloud PDF: Sends the resume to api.magicv.art for rendering and runs only after explicit confirmation."
       },
       "drag-and-drop": {
         "question": "How do I drag and drop to reorder modules?",

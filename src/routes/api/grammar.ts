@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AIModelType, AI_MODEL_CONFIGS } from "@/config/ai";
 import { formatGeminiErrorMessage, getGeminiModelInstance } from "@/lib/server/gemini";
+import { readJsonBody } from "@/lib/server/request";
+import { validateRemoteHttpUrl } from "@/lib/server/safeUrl";
+
+const MAX_AI_REQUEST_BYTES = 512 * 1024;
+const AI_TIMEOUT_MS = 60_000;
 
 const parseUpstreamError = (raw: string, fallback: string) => {
   if (!raw) return { message: fallback };
@@ -23,7 +28,13 @@ export const Route = createFileRoute("/api/grammar")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const body = await request.json();
+          const body = await readJsonBody<{
+            apiKey: string;
+            model: string;
+            content: string;
+            modelType: AIModelType;
+            apiEndpoint?: string;
+          }>(request, MAX_AI_REQUEST_BYTES);
           const { apiKey, model, content, modelType, apiEndpoint } = body as {
             apiKey: string;
             model: string;
@@ -34,7 +45,19 @@ export const Route = createFileRoute("/api/grammar")({
 
           const modelConfig = AI_MODEL_CONFIGS[modelType as AIModelType];
           if (!modelConfig) {
-            throw new Error("Invalid model type");
+            return Response.json({ error: "Invalid model type" }, { status: 400 });
+          }
+          if (
+            typeof apiKey !== "string" ||
+            apiKey.length === 0 ||
+            apiKey.length > 10_000 ||
+            typeof model !== "string" ||
+            model.length > 500 ||
+            typeof content !== "string" ||
+            content.length === 0 ||
+            content.length > 200_000
+          ) {
+            return Response.json({ error: "Invalid AI request" }, { status: 400 });
           }
 
           const systemPrompt = `你是一个专业的中文简历校对助手。你的任务是**仅**找出简历中的**错别字**和**标点符号错误**。
@@ -93,8 +116,15 @@ export const Route = createFileRoute("/api/grammar")({
             });
           }
 
-          const response = await fetch(modelConfig.url(apiEndpoint), {
+          const upstreamUrl = modelConfig.url(apiEndpoint);
+          if (modelType === "openai") {
+            await validateRemoteHttpUrl(upstreamUrl);
+          }
+
+          const response = await fetch(upstreamUrl, {
             method: "POST",
+            redirect: "error",
+            signal: AbortSignal.timeout(AI_TIMEOUT_MS),
             headers: modelConfig.headers(apiKey),
             body: JSON.stringify({
               model: modelConfig.requiresModelId ? model : modelConfig.defaultModel,
@@ -136,6 +166,7 @@ export const Route = createFileRoute("/api/grammar")({
 
           return Response.json(data);
         } catch (error) {
+          if (error instanceof Response) return error;
           console.error("Error in grammar check:", error);
           return Response.json(
             { error: formatGeminiErrorMessage(error) },

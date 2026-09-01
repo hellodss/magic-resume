@@ -19,6 +19,8 @@ import { preloadFontFamily } from "@/utils/fonts";
 import { useResumeStore } from "@/store/useResumeStore";
 import { useAIConfigStore } from "@/store/useAIConfigStore";
 import { DEFAULT_TEMPLATES } from "@/config";
+import { createResumeFromImport } from "@/lib/resumeSchema";
+import type { ResumeData } from "@/types/resume";
 import { CreateResumeModal } from "./CreateResumeModal";
 import { ImportResumeDialog } from "./ImportResumeDialog";
 import { ResumeCardItem } from "./ResumeCardItem";
@@ -28,11 +30,11 @@ import {
     createResumeFromAIResult,
     toStringArray
 } from "./utils";
-import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 const MAX_PDF_IMPORT_PAGES = 3;
 const PDF_IMAGE_QUALITY = 0.82;
 const PDF_MAX_IMAGE_WIDTH = 1600;
+const MAX_JSON_IMPORT_BYTES = 5 * 1024 * 1024;
 
 export const ResumeWorkbench = () => {
     const t = useTranslations();
@@ -164,19 +166,28 @@ export const ResumeWorkbench = () => {
     };
 
     const importResumeFromJson = async (file: File) => {
+        if (file.size > MAX_JSON_IMPORT_BYTES) {
+            throw new Error("Resume JSON exceeds the 5 MB limit");
+        }
+
         const content = await file.text();
         const config = JSON.parse(content);
         const now = new Date().toISOString();
         const { generateUUID } = await import("@/utils/uuid");
         const { initialResumeState } = await import("@/config/initialResumeData");
 
-        const newResume = {
+        const newResume = createResumeFromImport(
+          config,
+          {
             ...initialResumeState,
-            ...config,
+            templateId: DEFAULT_TEMPLATES[0]?.id,
+          } as Omit<ResumeData, "id" | "createdAt" | "updatedAt">,
+          {
             id: generateUUID(),
             createdAt: now,
             updatedAt: now,
-        };
+          }
+        );
         const resumeId = addResume(newResume);
         setActiveResume(resumeId);
         setIsImportDialogOpen(false);
@@ -185,11 +196,14 @@ export const ResumeWorkbench = () => {
     };
 
     const extractImagesFromPdf = async (file: File) => {
-        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const [pdfjs, workerModule] = await Promise.all([
+            import("pdfjs-dist/legacy/build/pdf.mjs"),
+            import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"),
+        ]);
         const buffer = await file.arrayBuffer();
         const typedPdfjs = pdfjs as any;
 
-        typedPdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+        typedPdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
 
         const loadingTask = typedPdfjs.getDocument({
             data: new Uint8Array(buffer),

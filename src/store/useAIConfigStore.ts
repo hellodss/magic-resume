@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { AI_MODEL_CONFIGS, AIModelType } from "@/config/ai";
+import { createAIConfigStorage } from "@/lib/desktopStorage";
 
 interface AIConfigState {
   selectedModel: AIModelType;
@@ -56,7 +57,10 @@ export const useAIConfigStore = create<AIConfigState>()(
       }
     }),
     {
-      name: "ai-config-storage"
+      name: "ai-config-storage",
+      storage: createJSONStorage(() => createAIConfigStorage()),
+      version: 1,
+      migrate: (persistedState) => persistedState as AIConfigState,
     }
   )
 );

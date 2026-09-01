@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AIModelType, AI_MODEL_CONFIGS } from "@/config/ai";
 import { formatGeminiErrorMessage, getGeminiModelInstance } from "@/lib/server/gemini";
+import { readJsonBody } from "@/lib/server/request";
+import { validateRemoteHttpUrl } from "@/lib/server/safeUrl";
+
+const MAX_AI_REQUEST_BYTES = 512 * 1024;
+const AI_TIMEOUT_MS = 60_000;
 
 const parseUpstreamError = (raw: string, fallback: string) => {
   if (!raw) return { message: fallback };
@@ -23,7 +28,14 @@ export const Route = createFileRoute("/api/polish")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const body = await request.json();
+          const body = await readJsonBody<{
+            apiKey: string;
+            model: string;
+            content: string;
+            modelType: AIModelType;
+            apiEndpoint?: string;
+            customInstructions?: string;
+          }>(request, MAX_AI_REQUEST_BYTES);
           const { apiKey, model, content, modelType, apiEndpoint, customInstructions } = body as {
             apiKey: string;
             model: string;
@@ -35,7 +47,21 @@ export const Route = createFileRoute("/api/polish")({
 
           const modelConfig = AI_MODEL_CONFIGS[modelType as AIModelType];
           if (!modelConfig) {
-            throw new Error("Invalid model type");
+            return Response.json({ error: "Invalid model type" }, { status: 400 });
+          }
+          if (
+            typeof apiKey !== "string" ||
+            apiKey.length === 0 ||
+            apiKey.length > 10_000 ||
+            typeof model !== "string" ||
+            model.length > 500 ||
+            typeof content !== "string" ||
+            content.length === 0 ||
+            content.length > 200_000 ||
+            (customInstructions !== undefined &&
+              (typeof customInstructions !== "string" || customInstructions.length > 10_000))
+          ) {
+            return Response.json({ error: "Invalid AI request" }, { status: 400 });
           }
 
           let systemPrompt = `你是一个专业的简历优化助手。请帮助优化以下 Markdown 格式的文本，使其更加专业和有吸引力。
@@ -100,8 +126,15 @@ export const Route = createFileRoute("/api/polish")({
             });
           }
 
-          const response = await fetch(modelConfig.url(apiEndpoint), {
+          const upstreamUrl = modelConfig.url(apiEndpoint);
+          if (modelType === "openai") {
+            await validateRemoteHttpUrl(upstreamUrl);
+          }
+
+          const response = await fetch(upstreamUrl, {
             method: "POST",
+            redirect: "error",
+            signal: AbortSignal.timeout(AI_TIMEOUT_MS),
             headers: modelConfig.headers(apiKey),
             body: JSON.stringify({
               model: modelConfig.requiresModelId ? model : modelConfig.defaultModel,
@@ -209,6 +242,7 @@ export const Route = createFileRoute("/api/polish")({
             }
           });
         } catch (error) {
+          if (error instanceof Response) return error;
           console.error("Polish error:", error);
           return Response.json(
             { error: formatGeminiErrorMessage(error) },

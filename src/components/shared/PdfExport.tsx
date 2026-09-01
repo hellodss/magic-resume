@@ -91,6 +91,10 @@ const PdfExport = ({ children }: { children?: React.ReactNode }) => {
   const tBasicField = useTranslations("workbench.basicPanel.basicFields");
 
   const handleExport = async () => {
+    if (!window.confirm(t("modal.remoteConsent"))) {
+      return;
+    }
+
     await exportToPdf({
       elementId: "resume-preview",
       title: title || "resume",
@@ -214,15 +218,6 @@ const PdfExport = ({ children }: { children?: React.ReactNode }) => {
         <div className="p-8 bg-background">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative">
             <ExportCard
-              icon={PdfGlassIcon}
-              title={t("button.exportPdf")}
-              description={t("modal.pdfDesc")}
-              isLoading={isExporting}
-              onClick={handleExport}
-              bgGradientClass="from-rose-500/10 dark:from-rose-500/20"
-              hoverBorderClass="hover:border-rose-500/40 hover:ring-1 hover:ring-rose-500/20"
-            />
-            <ExportCard
               icon={PrintGlassIcon}
               title={t("button.print")}
               description={t("modal.printDesc")}
@@ -230,6 +225,15 @@ const PdfExport = ({ children }: { children?: React.ReactNode }) => {
               onClick={handlePrint}
               bgGradientClass="from-sky-500/10 dark:from-sky-500/20"
               hoverBorderClass="hover:border-sky-500/40 hover:ring-1 hover:ring-sky-500/20"
+            />
+            <ExportCard
+              icon={PdfGlassIcon}
+              title={t("button.exportPdf")}
+              description={t("modal.pdfDesc")}
+              isLoading={isExporting}
+              onClick={handleExport}
+              bgGradientClass="from-rose-500/10 dark:from-rose-500/20"
+              hoverBorderClass="hover:border-rose-500/40 hover:ring-1 hover:ring-rose-500/20"
             />
             <ExportCard
               icon={JsonGlassIcon}

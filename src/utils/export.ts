@@ -236,16 +236,21 @@ export const exportToPdf = async ({
       }
     `;
 
+    const requestBody = JSON.stringify({
+      content: clonedElement.outerHTML,
+      styles,
+      margin: pagePadding
+    });
+    if (new Blob([requestBody]).size > PDF_EXPORT_CONFIG.MAX_CONTENT_SIZE) {
+      throw new Error("PDF content exceeds the 5 MB upload limit");
+    }
+
     const response = await fetch(PDF_EXPORT_CONFIG.SERVER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        content: clonedElement.outerHTML,
-        styles,
-        margin: pagePadding
-      }),
+      body: requestBody,
       mode: "cors",
       signal: AbortSignal.timeout(PDF_EXPORT_CONFIG.TIMEOUT)
     });

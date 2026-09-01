@@ -1,3 +1,5 @@
+import sanitizeHtml from "sanitize-html";
+
 const HTML_TAG_REGEX = /<\/?[a-z][\s\S]*>/i;
 const EMPTY_PARAGRAPH_REGEX = /<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi;
 const HTML_BREAK_REGEX = /<br\s*\/?>/gi;
@@ -14,6 +16,30 @@ const DOMAIN_REGEX =
 const SAFE_LINK_PROTOCOL_REGEX = /^(https?:|mailto:|tel:)/i;
 const ANY_PROTOCOL_REGEX = /^[a-z][a-z\d+\-.]*:/i;
 const LEGACY_RICH_TEXT_CLASSES = new Set(["custom-list", "custom-list-ordered"]);
+const ALLOWED_RICH_TEXT_TAGS = [
+  "a",
+  "blockquote",
+  "br",
+  "code",
+  "div",
+  "em",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "li",
+  "mark",
+  "ol",
+  "p",
+  "pre",
+  "s",
+  "span",
+  "strong",
+  "u",
+  "ul",
+];
 
 const escapeHtml = (text: string) =>
   text
@@ -97,6 +123,48 @@ export const normalizeLinkHref = (href?: string) => {
   return null;
 };
 
+export const sanitizeRichTextHtml = (content: string) =>
+  sanitizeHtml(content, {
+    allowedTags: ALLOWED_RICH_TEXT_TAGS,
+    allowedAttributes: {
+      a: ["class", "href", "rel", "target"],
+      div: ["class"],
+      mark: ["class", "style"],
+      ol: ["class", "start"],
+      p: ["class", "style"],
+      span: ["class", "style"],
+      ul: ["class"],
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowProtocolRelative: false,
+    allowedStyles: {
+      "*": {
+        "background-color": [/^#[0-9a-f]{3,8}$/i, /^rgba?\([\d\s,.%]+\)$/i],
+        color: [/^#[0-9a-f]{3,8}$/i, /^rgba?\([\d\s,.%]+\)$/i],
+        "text-align": [/^(left|right|center|justify)$/],
+      },
+    },
+    transformTags: {
+      a: (_tagName, attribs) => {
+        const href = normalizeLinkHref(attribs.href);
+        if (!href) {
+          return { tagName: "span", attribs: { class: "rich-text-link" } };
+        }
+
+        return {
+          tagName: "a",
+          attribs: {
+            ...attribs,
+            href,
+            class: [attribs.class, "rich-text-link"].filter(Boolean).join(" "),
+            rel: "noopener noreferrer",
+            target: "_blank",
+          },
+        };
+      },
+    },
+  });
+
 /**
  * 规范化富文本内容，解决以下问题：
  * 1. 纯文本中的换行无法在 HTML 中展示；
@@ -112,7 +180,9 @@ export const normalizeRichTextContent = (content?: string) => {
   }
 
   return decorateRichTextAnchors(
-    stripTrailingListParagraph(stripLegacyRichTextClasses(normalized))
+    sanitizeRichTextHtml(
+      stripTrailingListParagraph(stripLegacyRichTextClasses(normalized))
+    )
   ).replace(
     EMPTY_PARAGRAPH_REGEX,
     "<p><br /></p>"

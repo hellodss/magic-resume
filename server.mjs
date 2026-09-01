@@ -1,12 +1,20 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, normalize, resolve } from "node:path";
+import {
+  dirname,
+  extname,
+  isAbsolute,
+  normalize,
+  relative,
+  resolve,
+} from "node:path";
 import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import serverEntry from "./dist/server/server.js";
 
-const clientDir = resolve(process.cwd(), "dist/client");
-const port = Number(process.env.PORT || 3000);
-const host = process.env.HOSTNAME || "0.0.0.0";
+const appRoot = dirname(fileURLToPath(import.meta.url));
+const defaultClientDir = resolve(appRoot, "dist/client");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -16,8 +24,11 @@ const MIME_TYPES = {
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".map": "application/json; charset=utf-8",
+  ".json": "application/json",
+  ".map": "application/json",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".otf": "font/otf",
+  ".pdf": "application/pdf",
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".txt": "text/plain; charset=utf-8",
@@ -25,8 +36,20 @@ const MIME_TYPES = {
   ".webp": "image/webp",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
-  ".xml": "application/xml; charset=utf-8"
+  ".xml": "application/xml; charset=utf-8",
 };
+
+const CONTENT_SECURITY_POLICY_DIRECTIVES = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "connect-src 'self' https:",
+  "font-src 'self' data:",
+  "frame-ancestors 'none'",
+  "img-src 'self' data: blob: https:",
+  "object-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "worker-src 'self' blob:",
+];
 
 function getContentType(filePath) {
   const extension = extname(filePath).toLowerCase();
@@ -46,37 +69,84 @@ function toHeaders(nodeHeaders) {
   return headers;
 }
 
-function resolveStaticFile(pathname) {
+function resolveStaticFile(pathname, clientDir) {
   const decoded = decodeURIComponent(pathname);
   const normalized = normalize(decoded).replace(/^[/\\]+/, "");
   const absolutePath = resolve(clientDir, normalized);
-  if (!absolutePath.startsWith(clientDir)) return null;
+  const relativePath = relative(clientDir, absolutePath);
+
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) return null;
   if (!existsSync(absolutePath)) return null;
+
   const stats = statSync(absolutePath);
-  if (!stats.isFile()) return null;
-  return absolutePath;
+  return stats.isFile() ? absolutePath : null;
 }
 
-function tryServeStatic(req, res, url) {
-  if (!url.pathname || url.pathname.endsWith("/")) return false;
-  const filePath = resolveStaticFile(url.pathname);
-  if (!filePath) return false;
+async function applySecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  let body = response.body;
+  const scriptSources = new Set(["'self'"]);
 
-  res.statusCode = 200;
-  res.setHeader("Content-Type", getContentType(filePath));
-  if (url.pathname.startsWith("/assets/")) {
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-  } else {
-    res.setHeader("Cache-Control", "public, max-age=3600");
+  if (headers.get("Content-Type")?.includes("text/html") && response.body) {
+    const html = await response.text();
+    body = html;
+    headers.delete("Content-Length");
+
+    const inlineScriptPattern =
+      /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/gi;
+    for (const match of html.matchAll(inlineScriptPattern)) {
+      const digest = createHash("sha256")
+        .update(match[1] ?? "")
+        .digest("base64");
+      scriptSources.add(`'sha256-${digest}'`);
+    }
   }
 
-  if (req.method === "HEAD") {
-    res.end();
-    return true;
-  }
+  headers.set(
+    "Content-Security-Policy",
+    [
+      ...CONTENT_SECURITY_POLICY_DIRECTIVES,
+      `script-src ${[...scriptSources].join(" ")}`,
+    ].join("; "),
+  );
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
 
-  createReadStream(filePath).pipe(res);
-  return true;
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function createStaticResponse(request, url, clientDir) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  if (!url.pathname || url.pathname.endsWith("/")) return null;
+
+  const filePath = resolveStaticFile(url.pathname, clientDir);
+  if (!filePath) return null;
+
+  const headers = new Headers({
+    "Content-Type": getContentType(filePath),
+    "Cache-Control": url.pathname.startsWith("/assets/")
+      ? "public, max-age=31536000, immutable"
+      : "public, max-age=3600",
+  });
+  const body =
+    request.method === "HEAD" ? null : Readable.toWeb(createReadStream(filePath));
+
+  return new Response(body, { status: 200, headers });
+}
+
+export async function handleAppRequest(
+  request,
+  { clientDir = defaultClientDir } = {},
+) {
+  const url = new URL(request.url);
+  const staticResponse = createStaticResponse(request, url, clientDir);
+  const response = staticResponse ?? (await serverEntry.fetch(request));
+  return await applySecurityHeaders(response);
 }
 
 function appendSetCookie(res, value) {
@@ -92,52 +162,84 @@ function appendSetCookie(res, value) {
   res.setHeader("set-cookie", [String(existing), value]);
 }
 
-createServer(async (req, res) => {
-  try {
-    const hostHeader = req.headers.host || `localhost:${port}`;
-    const protocol = (req.headers["x-forwarded-proto"] || "http").toString().split(",")[0].trim();
-    const url = new URL(req.url || "/", `${protocol}://${hostHeader}`);
-
-    if (tryServeStatic(req, res, url)) return;
-
-    const method = (req.method || "GET").toUpperCase();
-    const hasBody = method !== "GET" && method !== "HEAD";
-    const init = {
-      method,
-      headers: toHeaders(req.headers)
-    };
-
-    if (hasBody) {
-      init.body = Readable.toWeb(req);
-      init.duplex = "half";
-    }
-
-    const request = new Request(url, init);
-    const response = await serverEntry.fetch(request);
-
-    res.statusCode = response.status;
-    response.headers.forEach((value, key) => {
-      if (key.toLowerCase() === "set-cookie") {
-        appendSetCookie(res, value);
-      } else {
-        res.setHeader(key, value);
+export function startServer({
+  port = Number(process.env.PORT || 3000),
+  host = process.env.HOST || "127.0.0.1",
+  clientDir = defaultClientDir,
+  authorizeRequest,
+} = {}) {
+  const server = createServer(async (req, res) => {
+    try {
+      if (authorizeRequest && !authorizeRequest(req)) {
+        res.statusCode = 403;
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end("Forbidden");
+        return;
       }
+
+      const hostHeader = req.headers.host || `${host}:${port}`;
+      const protocol = (req.headers["x-forwarded-proto"] || "http")
+        .toString()
+        .split(",")[0]
+        .trim();
+      const url = new URL(req.url || "/", `${protocol}://${hostHeader}`);
+      const method = (req.method || "GET").toUpperCase();
+      const hasBody = method !== "GET" && method !== "HEAD";
+      const init = {
+        method,
+        headers: toHeaders(req.headers),
+      };
+
+      if (hasBody) {
+        init.body = Readable.toWeb(req);
+        init.duplex = "half";
+      }
+
+      const request = new Request(url, init);
+      const response = await handleAppRequest(request, { clientDir });
+
+      res.statusCode = response.status;
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === "set-cookie") {
+          appendSetCookie(res, value);
+        } else {
+          res.setHeader(key, value);
+        }
+      });
+
+      if (method === "HEAD" || !response.body) {
+        res.end();
+        return;
+      }
+
+      Readable.fromWeb(response.body).pipe(res);
+    } catch (error) {
+      console.error("Server error:", error);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      }
+      res.end("Internal Server Error");
+    }
+  });
+
+  return new Promise((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      const address = server.address();
+      const resolvedPort =
+        address && typeof address === "object" ? address.port : port;
+      resolvePromise({
+        server,
+        url: `http://${host}:${resolvedPort}`,
+      });
     });
+  });
+}
 
-    if (method === "HEAD" || !response.body) {
-      res.end();
-      return;
-    }
-
-    Readable.fromWeb(response.body).pipe(res);
-  } catch (error) {
-    console.error("Server error:", error);
-    if (!res.headersSent) {
-      res.statusCode = 500;
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    }
-    res.end("Internal Server Error");
-  }
-}).listen(port, host, () => {
-  console.log(`Server running at http://${host}:${port}`);
-});
+const entryPath = process.argv[1] ? resolve(process.argv[1]) : null;
+if (entryPath === fileURLToPath(import.meta.url)) {
+  const { url } = await startServer();
+  console.log(`Server running at ${url}`);
+}

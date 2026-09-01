@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { formatGeminiErrorMessage, getGeminiModelInstance } from "@/lib/server/gemini";
+import { readJsonBody } from "@/lib/server/request";
+
+const MAX_IMPORT_REQUEST_BYTES = 20 * 1024 * 1024;
 
 const parseJsonPayload = (content: string) => {
   const text = content.trim();
@@ -44,7 +47,13 @@ export const Route = createFileRoute("/api/resume-import")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const body = await request.json();
+          const body = await readJsonBody<{
+            apiKey: string;
+            model?: string;
+            content?: string;
+            images?: string[];
+            locale?: string;
+          }>(request, MAX_IMPORT_REQUEST_BYTES);
           const { apiKey, model, content, images, locale } = body as {
             apiKey: string;
             model?: string;
@@ -53,9 +62,23 @@ export const Route = createFileRoute("/api/resume-import")({
             locale?: string;
           };
 
-          if (!apiKey || (!content && (!images || images.length === 0))) {
+          if (
+            typeof apiKey !== "string" ||
+            apiKey.length === 0 ||
+            apiKey.length > 10_000 ||
+            (model !== undefined && (typeof model !== "string" || model.length > 500)) ||
+            (content !== undefined &&
+              (typeof content !== "string" || content.length > 200_000)) ||
+            (images !== undefined &&
+              (!Array.isArray(images) ||
+                images.length > 3 ||
+                images.some(
+                  (image) => typeof image !== "string" || image.length > 8 * 1024 * 1024
+                ))) ||
+            (!content && (!images || images.length === 0))
+          ) {
             return Response.json(
-              { error: "Missing API key or resume content/images" },
+              { error: "Invalid API key or resume content/images" },
               { status: 400 }
             );
           }
@@ -162,6 +185,7 @@ JSON 结构：
 
           return Response.json({ resume: parsedResume });
         } catch (error) {
+          if (error instanceof Response) return error;
           console.error("Error in resume import:", error);
           const status =
             typeof (error as any)?.status === "number"

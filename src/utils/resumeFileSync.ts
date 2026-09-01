@@ -1,19 +1,11 @@
 import type { ResumeData } from "@/types/resume";
 import { getFileHandle, verifyPermission } from "@/utils/fileSystem";
+import { parseResumeFile } from "@/lib/resumeSchema";
 
 type SyncResult = {
   synced: number;
   skipped: number;
   failed: number;
-};
-
-const isResumeData = (value: unknown): value is ResumeData => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const resume = value as Partial<ResumeData>;
-  return typeof resume.id === "string" && resume.id.length > 0;
 };
 
 export const syncResumesFromDirectory = async (
@@ -58,12 +50,7 @@ export const syncResumesFromDirectory = async (
       try {
         const file = await entry.getFile();
         const content = await file.text();
-        const resumeData = JSON.parse(content);
-
-        if (!isResumeData(resumeData)) {
-          result.skipped += 1;
-          continue;
-        }
+        const resumeData = parseResumeFile(JSON.parse(content));
 
         const imported = updateResumeFromFile(resumeData, file.lastModified);
         if (imported) {

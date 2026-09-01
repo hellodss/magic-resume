@@ -25,6 +25,9 @@ const ThemeModal = ({
   title,
 }: ThemedAlertDialogProps) => {
   const t = useTranslations("themeModal.delete");
+  const description = String(t.raw("description") ?? "");
+  const [descriptionBeforeTitle, descriptionAfterTitle = ""] =
+    description.split("{title}");
 
   return (
     <AlertDialog open={isOpen} onOpenChange={onClose}>
@@ -33,9 +36,9 @@ const ThemeModal = ({
           <AlertDialogTitle>{t("title")}</AlertDialogTitle>
           <AlertDialogDescription>
             <span>
-              {t.raw("description").split("{title}")[0]}
+              {descriptionBeforeTitle}
               <span className="px-1 font-semibold text-foreground">{title}</span>
-              {t.raw("description").split("{title}")[1]}
+              {descriptionAfterTitle}
             </span>
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -61,9 +61,9 @@ const FONT_DEFINITIONS: FontDefinition[] = [
       },
       {
         family: "MiSans",
-        url: "/fonts/MiSans-Bold.ttf",
+        url: "/fonts/MiSans-Medium.ttf",
         format: "truetype",
-        weight: "700",
+        weight: "500",
         style: "normal"
       }
     ]

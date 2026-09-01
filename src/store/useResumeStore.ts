@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { StateStorage } from "zustand/middleware";
+import { createResumeStorage } from "@/lib/desktopStorage";
 import { getFileHandle, verifyPermission } from "@/utils/fileSystem";
 import {
   BasicInfo,
@@ -120,22 +121,30 @@ const warnPersistFailure = (name: string, error: unknown) => {
 
   warnedPersistFailures.add(name);
   console.warn(
-    `[resume-store] Failed to persist "${name}" to localStorage. Changes remain available in memory for this session.`,
+    `[resume-store] Failed to persist "${name}". Changes remain available in memory for this session.`,
     error
   );
 };
 
-const createSafeLocalStorage = (): StateStorage => ({
-  getItem: (name) => localStorage.getItem(name),
-  setItem: (name, value) => {
-    try {
-      localStorage.setItem(name, value);
-    } catch (error) {
-      warnPersistFailure(name, error);
-    }
-  },
-  removeItem: (name) => localStorage.removeItem(name),
-});
+const createSafeResumeStorage = (): StateStorage => {
+  const storage = createResumeStorage();
+
+  return {
+    getItem: (name) => storage.getItem(name),
+    setItem: (name, value) => {
+      try {
+        const result = storage.setItem(name, value);
+        if (result instanceof Promise) {
+          return result.catch((error) => warnPersistFailure(name, error));
+        }
+        return result;
+      } catch (error) {
+        warnPersistFailure(name, error);
+      }
+    },
+    removeItem: (name) => storage.removeItem(name),
+  };
+};
 
 const parseTimestamp = (value?: string): number | null => {
   if (!value) {
@@ -987,8 +996,10 @@ export const useResumeStore = create(
     {
       name: "resume-storage",
       storage: createJSONStorage<PersistedResumeStore>(() =>
-        createSafeLocalStorage()
+        createSafeResumeStorage()
       ),
+      version: 1,
+      migrate: (persistedState) => persistedState as PersistedResumeStore,
       partialize: (state): PersistedResumeStore => ({
         resumes: state.resumes,
         activeResumeId: state.activeResumeId,

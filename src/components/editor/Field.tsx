@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { CalendarIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useTranslations } from "@/i18n/compat/client";
@@ -14,10 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import RichTextEditor from "../shared/rich-editor/RichEditor";
-import AIPolishDialog from "../shared/ai/AIPolishDialog";
 import { useAIConfiguration } from "@/hooks/useAIConfiguration";
 import { UnifiedDateInput } from "../ui/unified-date-input";
 import { UnifiedDateRangeInput } from "../ui/unified-date-range-input";
+
+const AIPolishDialog = lazy(() => import("../shared/ai/AIPolishDialog"));
 
 interface FieldProps {
   label?: string;
@@ -186,14 +187,18 @@ const Field = ({
           />
         </div>
 
-        <AIPolishDialog
-          open={showPolishDialog}
-          onOpenChange={setShowPolishDialog}
-          content={value || ""}
-          onApply={(content) => {
-            onChange(content);
-          }}
-        />
+        {showPolishDialog && (
+          <Suspense fallback={null}>
+            <AIPolishDialog
+              open
+              onOpenChange={setShowPolishDialog}
+              content={value || ""}
+              onApply={(content) => {
+                onChange(content);
+              }}
+            />
+          </Suspense>
+        )}
       </motion.div>
     );
   }
