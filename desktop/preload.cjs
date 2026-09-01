@@ -12,4 +12,14 @@ contextBridge.exposeInMainWorld("magicResumeDesktop", {
     setItem: (value) => ipcRenderer.invoke("ai-config-storage:set", value),
     removeItem: () => ipcRenderer.invoke("ai-config-storage:remove"),
   },
+  directorySync: {
+    getPath: () => ipcRenderer.invoke("directory-sync:get-path"),
+    select: () => ipcRenderer.invoke("directory-sync:select"),
+    remove: () => ipcRenderer.invoke("directory-sync:remove"),
+    readResumes: () => ipcRenderer.invoke("directory-sync:read-resumes"),
+    removeResume: (title) =>
+      ipcRenderer.invoke("directory-sync:remove-resume", title),
+    writeResume: (payload) =>
+      ipcRenderer.invoke("directory-sync:write-resume", payload),
+  },
 });

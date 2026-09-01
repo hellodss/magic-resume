@@ -181,7 +181,11 @@
       "sync": {
         "title": "同步目录",
         "description": "选择一个文件夹来同步和备份您的简历。",
-        "select": "选择文件夹"
+        "select": "选择文件夹",
+        "selectSuccess": "数据存储目录已应用，并已同步现有简历",
+        "selectError": "无法应用数据存储目录，请重新选择",
+        "removeSuccess": "已取消数据存储目录",
+        "removeError": "无法取消数据存储目录"
       },
       "ai": {
         "title": "AI 配置",

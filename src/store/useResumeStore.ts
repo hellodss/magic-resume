@@ -2,7 +2,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { StateStorage } from "zustand/middleware";
 import { createResumeStorage } from "@/lib/desktopStorage";
-import { getFileHandle, verifyPermission } from "@/utils/fileSystem";
+import {
+  removeResumeFromDirectory,
+  syncResumeToDirectory,
+} from "@/utils/resumeFileSync";
 import {
   BasicInfo,
   Education,
@@ -212,52 +215,6 @@ const normalizeImportedResume = (
   };
 };
 
-// 同步简历到文件系统
-const syncResumeToFile = async (
-  resumeData: ResumeData,
-  prevResume?: ResumeData
-) => {
-  if (typeof window === "undefined" || typeof indexedDB === "undefined") {
-    return;
-  }
-
-  try {
-    const handle = await getFileHandle("syncDirectory");
-    if (!handle) {
-      return;
-    }
-
-    const hasPermission = await verifyPermission(handle);
-    if (!hasPermission) {
-      return;
-    }
-
-    const dirHandle = handle as FileSystemDirectoryHandle;
-
-    if (
-      prevResume &&
-      prevResume.id === resumeData.id &&
-      prevResume.title !== resumeData.title
-    ) {
-      try {
-        await dirHandle.removeEntry(`${prevResume.title}.json`);
-      } catch (error) {
-        console.warn("Error deleting old file:", error);
-      }
-    }
-
-    const fileName = `${resumeData.title}.json`;
-    const fileHandle = await dirHandle.getFileHandle(fileName, {
-      create: true,
-    });
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(resumeData, null, 2));
-    await writable.close();
-  } catch (error) {
-    console.error("Error syncing resume to file:", error);
-  }
-};
-
 // 防抖同步：按简历合并高频写入，避免不同简历之间互相取消文件同步
 const pendingSyncs = new Map<string, PendingSync>();
 
@@ -282,7 +239,9 @@ const debouncedSyncToFile = (
 
   const prevResumeForSync = pendingSync?.prevResume ?? prevResume;
   const timer = setTimeout(() => {
-    syncResumeToFile(resumeData, prevResumeForSync);
+    void syncResumeToDirectory(resumeData, prevResumeForSync).catch((error) => {
+      console.error("Error syncing resume to file:", error);
+    });
     pendingSyncs.delete(resumeData.id);
   }, 1500);
 
@@ -353,7 +312,9 @@ export const useResumeStore = create(
           },
         }));
 
-        syncResumeToFile(newResume);
+        void syncResumeToDirectory(newResume).catch((error) => {
+          console.error("Error syncing resume to file:", error);
+        });
 
         return id;
       },
@@ -536,22 +497,9 @@ export const useResumeStore = create(
           };
         });
 
-        (async () => {
-          try {
-            const handle = await getFileHandle("syncDirectory");
-            if (!handle) return;
-
-            const hasPermission = await verifyPermission(handle);
-            if (!hasPermission) return;
-
-            const dirHandle = handle as FileSystemDirectoryHandle;
-            try {
-              await dirHandle.removeEntry(`${resume.title}.json`);
-            } catch (error) {}
-          } catch (error) {
-            console.error("Error deleting resume file:", error);
-          }
-        })();
+        void removeResumeFromDirectory(resume.title).catch((error) => {
+          console.error("Error deleting resume file:", error);
+        });
       },
 
       duplicateResume: (resumeId) => {
@@ -989,7 +937,9 @@ export const useResumeStore = create(
           },
         }));
 
-        syncResumeToFile(resume);
+        void syncResumeToDirectory(resume).catch((error) => {
+          console.error("Error syncing resume to file:", error);
+        });
         return resume.id;
       },
     }),

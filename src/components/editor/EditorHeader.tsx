@@ -50,6 +50,14 @@ export function EditorHeader({ isMobile }: EditorHeaderProps) {
   useEffect(() => {
     const checkBackup = async () => {
       try {
+        const desktopSync = window.magicResumeDesktop?.directorySync;
+        if (desktopSync) {
+          const path = await desktopSync.getPath();
+          setBackupConfigured(Boolean(path));
+          setBackupPath(path || "");
+          return;
+        }
+
         const handle = await getFileHandle("syncDirectory");
         const path = await getConfig("syncDirectoryPath");
         setBackupConfigured(!!handle);

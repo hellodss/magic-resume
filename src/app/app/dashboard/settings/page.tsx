@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Folder, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { useTranslations } from "@/i18n/compat/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,11 +18,13 @@ import {
   verifyPermission,
 } from "@/utils/fileSystem";
 import { useResumeStore } from "@/store/useResumeStore";
-import { syncResumesFromDirectory } from "@/utils/resumeFileSync";
+import {
+  syncResumesFromDirectory,
+  syncResumeToDirectory,
+} from "@/utils/resumeFileSync";
 
 const SettingsPage = () => {
-  const [directoryHandle, setDirectoryHandle] =
-    useState<FileSystemDirectoryHandle | null>(null);
+  const [directoryConfigured, setDirectoryConfigured] = useState(false);
   const [folderPath, setFolderPath] = useState<string>("");
   const t = useTranslations();
   const updateResumeFromFile = useResumeStore(
@@ -31,13 +34,21 @@ const SettingsPage = () => {
   useEffect(() => {
     const loadSavedConfig = async () => {
       try {
+        const desktopSync = window.magicResumeDesktop?.directorySync;
+        if (desktopSync) {
+          const path = await desktopSync.getPath();
+          setDirectoryConfigured(Boolean(path));
+          setFolderPath(path || "");
+          return;
+        }
+
         const handle = await getFileHandle("syncDirectory");
         const path = await getConfig("syncDirectoryPath");
 
         if (handle && path) {
           const hasPermission = await verifyPermission(handle);
           if (hasPermission) {
-            setDirectoryHandle(handle as FileSystemDirectoryHandle);
+            setDirectoryConfigured(true);
             setFolderPath(path);
           }
         }
@@ -51,37 +62,61 @@ const SettingsPage = () => {
 
   const handleSelectDirectory = async () => {
     try {
-      if (!("showDirectoryPicker" in window)) {
-        alert(
-          "Your browser does not support directory selection. Please use a modern browser."
-        );
-        return;
-      }
+      const desktopSync = window.magicResumeDesktop?.directorySync;
+      if (desktopSync) {
+        const path = await desktopSync.select();
+        if (!path) return;
+        setDirectoryConfigured(true);
+        setFolderPath(path);
+      } else {
+        if (!("showDirectoryPicker" in window)) {
+          alert(
+            "Your browser does not support directory selection. Please use a modern browser."
+          );
+          return;
+        }
 
-      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
-      const hasPermission = await verifyPermission(handle);
-      if (hasPermission) {
-        setDirectoryHandle(handle);
+        const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+        const hasPermission = await verifyPermission(handle);
+        if (!hasPermission) {
+          throw new Error("Directory write permission was not granted.");
+        }
+
+        setDirectoryConfigured(true);
         const path = handle.name;
         setFolderPath(path);
         await storeFileHandle("syncDirectory", handle);
         await storeConfig("syncDirectoryPath", path);
-        await syncResumesFromDirectory(updateResumeFromFile);
       }
+
+      await syncResumesFromDirectory(updateResumeFromFile);
+      await Promise.all(
+        Object.values(useResumeStore.getState().resumes).map((resume) =>
+          syncResumeToDirectory(resume)
+        )
+      );
+      toast.success(t("dashboard.settings.sync.selectSuccess"));
     } catch (error) {
       console.error("Error selecting directory:", error);
+      toast.error(t("dashboard.settings.sync.selectError"));
     }
   };
 
   const handleRemoveDirectory = async () => {
     try {
-      setDirectoryHandle(null);
+      const desktopSync = window.magicResumeDesktop?.directorySync;
+      if (desktopSync) {
+        await desktopSync.remove();
+      } else {
+        await storeFileHandle("syncDirectory", null as any);
+        await storeConfig("syncDirectoryPath", "");
+      }
+      setDirectoryConfigured(false);
       setFolderPath("");
-      // Clear from IndexedDB
-      await storeFileHandle("syncDirectory", null as any);
-      await storeConfig("syncDirectoryPath", "");
+      toast.success(t("dashboard.settings.sync.removeSuccess"));
     } catch (error) {
       console.error("Error removing directory:", error);
+      toast.error(t("dashboard.settings.sync.removeError"));
     }
   };
 
@@ -114,7 +149,7 @@ const SettingsPage = () => {
             <CardContent className="pt-8 px-6 pb-8 md:px-8">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
                 <div className="flex-1 relative group">
-                  {directoryHandle ? (
+                  {directoryConfigured ? (
                     <div className="h-12 px-4 flex items-center gap-3 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors group-hover:border-[#D97757]/30 group-hover:bg-orange-50/30 dark:group-hover:bg-orange-900/10">
                       <Folder className="h-5 w-5 text-[#D97757]" />
                       <span className="truncate font-medium text-gray-700 dark:text-gray-300 font-mono text-sm">
@@ -135,7 +170,7 @@ const SettingsPage = () => {
                   >
                     {t("dashboard.settings.sync.select")}
                   </Button>
-                  {directoryHandle && (
+                  {directoryConfigured && (
                     <Button
                       onClick={handleRemoveDirectory}
                       variant="outline"

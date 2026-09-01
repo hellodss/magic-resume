@@ -12,18 +12,23 @@ import {
   copyFile,
   mkdir,
   readFile,
+  readdir,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { randomBytes, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "../server.mjs";
+import { toResumeFileName } from "./path-utils.mjs";
 
 const DESKTOP_HOST = "127.0.0.1";
 const DESKTOP_PORT = 47839;
 const AUTH_HEADER = "X-Magic-Resume-Token";
+const MAX_SYNC_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_SYNC_FILES = 1000;
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let trustedOrigin = "";
 let localServer;
@@ -160,6 +165,28 @@ const installStorageHandlers = () => {
   const resumeBackup = `${resumeFile}.bak`;
   const aiConfigFile = join(dataDirectory, "ai-config-storage.bin");
   const aiConfigBackup = `${aiConfigFile}.bak`;
+  const syncDirectoryFile = join(dataDirectory, "sync-directory.json");
+  const syncDirectoryBackup = `${syncDirectoryFile}.bak`;
+
+  const getSyncDirectoryPath = async () => {
+    const storedValue = await readWithBackup(
+      syncDirectoryFile,
+      syncDirectoryBackup,
+    );
+    if (!storedValue) return null;
+
+    const parsed = JSON.parse(storedValue);
+    if (!parsed || typeof parsed.path !== "string" || !parsed.path.trim()) {
+      return null;
+    }
+
+    try {
+      const directoryStats = await stat(parsed.path);
+      return directoryStats.isDirectory() ? parsed.path : null;
+    } catch {
+      return null;
+    }
+  };
 
   ipcMain.handle("resume-storage:get", async (event) => {
     assertTrustedSender(event);
@@ -222,6 +249,113 @@ const installStorageHandlers = () => {
     assertTrustedSender(event);
     await enqueueFileOperation(aiConfigFile, () =>
       removePersistedFile(aiConfigFile),
+    );
+  });
+
+  ipcMain.handle("directory-sync:get-path", async (event) => {
+    assertTrustedSender(event);
+    return getSyncDirectoryPath();
+  });
+  ipcMain.handle("directory-sync:select", async (event) => {
+    assertTrustedSender(event);
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      title: "选择简历数据存储目录",
+      properties: ["openDirectory", "createDirectory"],
+    };
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || !result.filePaths[0]) return null;
+
+    const directoryPath = resolve(result.filePaths[0]);
+    await writeAtomic(
+      syncDirectoryFile,
+      JSON.stringify({ path: directoryPath }),
+    );
+    return directoryPath;
+  });
+  ipcMain.handle("directory-sync:remove", async (event) => {
+    assertTrustedSender(event);
+    await enqueueFileOperation(syncDirectoryFile, () =>
+      removePersistedFile(syncDirectoryFile),
+    );
+  });
+  ipcMain.handle("directory-sync:read-resumes", async (event) => {
+    assertTrustedSender(event);
+    const directoryPath = await getSyncDirectoryPath();
+    if (!directoryPath) return [];
+
+    const entries = await readdir(directoryPath, { withFileTypes: true });
+    const resumeEntries = entries
+      .filter(
+        (entry) =>
+          entry.isFile() && entry.name.toLocaleLowerCase().endsWith(".json"),
+      )
+      .slice(0, MAX_SYNC_FILES);
+    const files = [];
+
+    for (const entry of resumeEntries) {
+      const filePath = join(directoryPath, entry.name);
+      try {
+        const fileStats = await stat(filePath);
+        if (fileStats.size > MAX_SYNC_FILE_BYTES) continue;
+        files.push({
+          name: entry.name,
+          content: await readFile(filePath, "utf8"),
+          lastModified: fileStats.mtimeMs,
+        });
+      } catch (error) {
+        console.warn(`Unable to read synced resume "${entry.name}":`, error);
+      }
+    }
+
+    return files;
+  });
+  ipcMain.handle("directory-sync:write-resume", async (event, payload) => {
+    assertTrustedSender(event);
+    if (
+      !payload ||
+      typeof payload.title !== "string" ||
+      typeof payload.content !== "string"
+    ) {
+      throw new TypeError("Invalid resume sync payload.");
+    }
+
+    validatePersistedJson(payload.content);
+    if (Buffer.byteLength(payload.content, "utf8") > MAX_SYNC_FILE_BYTES) {
+      throw new Error("Resume data is too large to sync.");
+    }
+
+    const directoryPath = await getSyncDirectoryPath();
+    if (!directoryPath) throw new Error("No resume sync directory configured.");
+
+    const fileName = toResumeFileName(payload.title);
+    if (
+      typeof payload.previousTitle === "string" &&
+      payload.previousTitle !== payload.title
+    ) {
+      const previousFileName = toResumeFileName(payload.previousTitle);
+      if (previousFileName !== fileName) {
+        await removePersistedFile(join(directoryPath, previousFileName));
+      }
+    }
+
+    await enqueueFileOperation(join(directoryPath, fileName), () =>
+      writeAtomic(join(directoryPath, fileName), payload.content),
+    );
+    return { fileName };
+  });
+  ipcMain.handle("directory-sync:remove-resume", async (event, title) => {
+    assertTrustedSender(event);
+    if (typeof title !== "string") {
+      throw new TypeError("Invalid resume title.");
+    }
+    const directoryPath = await getSyncDirectoryPath();
+    if (!directoryPath) return;
+    await removePersistedFile(
+      join(directoryPath, toResumeFileName(title)),
     );
   });
 };
