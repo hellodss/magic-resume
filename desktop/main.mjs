@@ -32,6 +32,8 @@ const MAX_SYNC_FILES = 1000;
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let trustedOrigin = "";
 let localServer;
+const closeReadyWindows = new WeakSet();
+const closeTimeouts = new WeakMap();
 
 const isTrustedUrl = (rawUrl) => {
   try {
@@ -358,6 +360,19 @@ const installStorageHandlers = () => {
       join(directoryPath, toResumeFileName(title)),
     );
   });
+  ipcMain.handle("desktop-lifecycle:close-ready", async (event) => {
+    assertTrustedSender(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed()) return;
+
+    const timeout = closeTimeouts.get(window);
+    if (timeout) clearTimeout(timeout);
+    closeTimeouts.delete(window);
+    closeReadyWindows.add(window);
+    setImmediate(() => {
+      if (!window.isDestroyed()) window.close();
+    });
+  });
 };
 
 const createMainWindow = () => {
@@ -380,6 +395,20 @@ const createMainWindow = () => {
   });
 
   window.once("ready-to-show", () => window.show());
+  window.on("close", (event) => {
+    if (closeReadyWindows.has(window)) return;
+
+    event.preventDefault();
+    if (closeTimeouts.has(window)) return;
+
+    window.webContents.send("desktop-lifecycle:before-close");
+    const timeout = setTimeout(() => {
+      closeTimeouts.delete(window);
+      closeReadyWindows.add(window);
+      if (!window.isDestroyed()) window.close();
+    }, 5000);
+    closeTimeouts.set(window, timeout);
+  });
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) {
       void shell.openExternal(url);

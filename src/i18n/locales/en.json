@@ -184,7 +184,11 @@
         "selectSuccess": "The data folder is active and existing resumes are synced",
         "selectError": "Unable to apply the data folder. Please try again",
         "removeSuccess": "The data folder has been disconnected",
-        "removeError": "Unable to disconnect the data folder"
+        "removeError": "Unable to disconnect the data folder",
+        "backupNow": "Back Up Now",
+        "backingUp": "Backing Up",
+        "backupSuccess": "All resumes have been backed up",
+        "backupError": "Backup failed. Check that the folder is writable"
       },
       "ai": {
         "title": "AI Configuration",
@@ -331,6 +335,11 @@
       "enabled": "One page mode enabled",
       "disabled": "One page mode disabled",
       "cannotFit": "Too much content. Optimized as much as possible but cannot fit on one page. Try simplifying the content or adjusting margins and font size in the sidebar."
+    },
+    "saveStatus": {
+      "saved": "Saved",
+      "saving": "Saving",
+      "error": "Save failed"
     },
     "backup": {
       "configured": "Backed up",

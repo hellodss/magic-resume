@@ -7,6 +7,11 @@ import {
   syncResumeToDirectory,
 } from "@/utils/resumeFileSync";
 import {
+  markResumeSaveError,
+  markResumeSavePending,
+  markResumeSaved,
+} from "./useSaveStatusStore";
+import {
   BasicInfo,
   Education,
   Experience,
@@ -38,6 +43,7 @@ import {
 
 interface PendingSync {
   timer: ReturnType<typeof setTimeout>;
+  resumeData: ResumeData;
   prevResume?: ResumeData;
 }
 
@@ -118,6 +124,7 @@ const createDefaultCustomItem = (): CustomItem => ({
 const warnedPersistFailures = new Set<string>();
 
 const warnPersistFailure = (name: string, error: unknown) => {
+  markResumeSaveError(name);
   if (warnedPersistFailures.has(name)) {
     return;
   }
@@ -218,6 +225,37 @@ const normalizeImportedResume = (
 // 防抖同步：按简历合并高频写入，避免不同简历之间互相取消文件同步
 const pendingSyncs = new Map<string, PendingSync>();
 
+export const saveResumeNow = async (
+  resumeData: ResumeData,
+  prevResume?: ResumeData
+) => {
+  markResumeSavePending(resumeData.id);
+  try {
+    await syncResumeToDirectory(resumeData, prevResume);
+    markResumeSaved(resumeData.id);
+  } catch (error) {
+    markResumeSaveError(resumeData.id);
+    throw error;
+  }
+};
+
+export const flushPendingResumeSyncs = async () => {
+  const pendingEntries = Array.from(pendingSyncs.values());
+  pendingSyncs.clear();
+  for (const pending of pendingEntries) clearTimeout(pending.timer);
+
+  const results = await Promise.allSettled(
+    pendingEntries.map(({ resumeData, prevResume }) =>
+      saveResumeNow(resumeData, prevResume)
+    )
+  );
+  const failure = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected"
+  );
+  if (failure) throw failure.reason;
+  return new Set(pendingEntries.map(({ resumeData }) => resumeData.id));
+};
+
 const clearPendingSync = (resumeId: string) => {
   const pendingSync = pendingSyncs.get(resumeId);
   if (!pendingSync) {
@@ -226,6 +264,7 @@ const clearPendingSync = (resumeId: string) => {
 
   clearTimeout(pendingSync.timer);
   pendingSyncs.delete(resumeId);
+  markResumeSaved(resumeId);
 };
 
 const debouncedSyncToFile = (
@@ -238,15 +277,17 @@ const debouncedSyncToFile = (
   }
 
   const prevResumeForSync = pendingSync?.prevResume ?? prevResume;
+  markResumeSavePending(resumeData.id);
   const timer = setTimeout(() => {
-    void syncResumeToDirectory(resumeData, prevResumeForSync).catch((error) => {
+    pendingSyncs.delete(resumeData.id);
+    void saveResumeNow(resumeData, prevResumeForSync).catch((error) => {
       console.error("Error syncing resume to file:", error);
     });
-    pendingSyncs.delete(resumeData.id);
   }, 1500);
 
   pendingSyncs.set(resumeData.id, {
     timer,
+    resumeData,
     prevResume: prevResumeForSync,
   });
 };
@@ -312,7 +353,7 @@ export const useResumeStore = create(
           },
         }));
 
-        void syncResumeToDirectory(newResume).catch((error) => {
+        void saveResumeNow(newResume).catch((error) => {
           console.error("Error syncing resume to file:", error);
         });
 
@@ -937,7 +978,7 @@ export const useResumeStore = create(
           },
         }));
 
-        void syncResumeToDirectory(resume).catch((error) => {
+        void saveResumeNow(resume).catch((error) => {
           console.error("Error syncing resume to file:", error);
         });
         return resume.id;

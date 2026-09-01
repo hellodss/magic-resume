@@ -185,7 +185,11 @@
         "selectSuccess": "数据存储目录已应用，并已同步现有简历",
         "selectError": "无法应用数据存储目录，请重新选择",
         "removeSuccess": "已取消数据存储目录",
-        "removeError": "无法取消数据存储目录"
+        "removeError": "无法取消数据存储目录",
+        "backupNow": "立即备份",
+        "backingUp": "正在备份",
+        "backupSuccess": "所有简历已备份",
+        "backupError": "备份失败，请检查目录是否可写"
       },
       "ai": {
         "title": "AI 配置",
@@ -744,6 +748,11 @@
       "enabled": "已开启一页纸模式",
       "disabled": "已关闭一页纸模式",
       "cannotFit": "内容较多，已尽量压缩但无法完美一页，建议精简内容, 也可在此基础上调节页边距、字体大小等左侧设置栏选项"
+    },
+    "saveStatus": {
+      "saved": "已保存",
+      "saving": "正在保存",
+      "error": "保存失败"
     },
     "backup": {
       "configured": "已备份",

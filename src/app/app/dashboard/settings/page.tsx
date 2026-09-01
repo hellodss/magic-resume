@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Folder, Trash2 } from "lucide-react";
+import { Folder, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/i18n/compat/client";
 import { Button } from "@/components/ui/button";
@@ -17,15 +17,17 @@ import {
   storeConfig,
   verifyPermission,
 } from "@/utils/fileSystem";
-import { useResumeStore } from "@/store/useResumeStore";
 import {
-  syncResumesFromDirectory,
-  syncResumeToDirectory,
-} from "@/utils/resumeFileSync";
+  flushPendingResumeSyncs,
+  saveResumeNow,
+  useResumeStore,
+} from "@/store/useResumeStore";
+import { syncResumesFromDirectory } from "@/utils/resumeFileSync";
 
 const SettingsPage = () => {
   const [directoryConfigured, setDirectoryConfigured] = useState(false);
   const [folderPath, setFolderPath] = useState<string>("");
+  const [isBackingUp, setIsBackingUp] = useState(false);
   const t = useTranslations();
   const updateResumeFromFile = useResumeStore(
     (state) => state.updateResumeFromFile
@@ -92,7 +94,7 @@ const SettingsPage = () => {
       await syncResumesFromDirectory(updateResumeFromFile);
       await Promise.all(
         Object.values(useResumeStore.getState().resumes).map((resume) =>
-          syncResumeToDirectory(resume)
+          saveResumeNow(resume)
         )
       );
       toast.success(t("dashboard.settings.sync.selectSuccess"));
@@ -117,6 +119,24 @@ const SettingsPage = () => {
     } catch (error) {
       console.error("Error removing directory:", error);
       toast.error(t("dashboard.settings.sync.removeError"));
+    }
+  };
+
+  const handleManualBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const flushedResumeIds = await flushPendingResumeSyncs();
+      await Promise.all(
+        Object.values(useResumeStore.getState().resumes)
+          .filter((resume) => !flushedResumeIds.has(resume.id))
+          .map((resume) => saveResumeNow(resume))
+      );
+      toast.success(t("dashboard.settings.sync.backupSuccess"));
+    } catch (error) {
+      console.error("Error backing up resumes:", error);
+      toast.error(t("dashboard.settings.sync.backupError"));
+    } finally {
+      setIsBackingUp(false);
     }
   };
 
@@ -163,6 +183,23 @@ const SettingsPage = () => {
                   )}
                 </div>
                 <div className="flex items-center gap-3 w-full sm:w-auto">
+                  {directoryConfigured && (
+                    <Button
+                      onClick={handleManualBackup}
+                      variant="outline"
+                      disabled={isBackingUp}
+                      className="flex-1 sm:flex-none h-12 px-5 rounded-xl"
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 mr-2 ${isBackingUp ? "animate-spin" : ""}`}
+                      />
+                      {t(
+                        isBackingUp
+                          ? "dashboard.settings.sync.backingUp"
+                          : "dashboard.settings.sync.backupNow"
+                      )}
+                    </Button>
+                  )}
                   <Button
                     onClick={handleSelectDirectory}
                     variant="default"

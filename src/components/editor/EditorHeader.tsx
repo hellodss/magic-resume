@@ -2,18 +2,25 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "@/i18n/compat/client";
 import {
   AlertCircle,
+  CheckCircle2,
   ShieldCheck,
   ShieldAlert,
   Edit2,
   Undo2,
   Redo2,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useRouter } from "@/lib/navigation";
 import { Input } from "@/components/ui/input";
 import PdfExport from "../shared/PdfExport";
 import ThemeToggle from "../shared/ThemeToggle";
-import { useResumeStore } from "@/store/useResumeStore";
+import {
+  flushPendingResumeSyncs,
+  saveResumeNow,
+  useResumeStore,
+} from "@/store/useResumeStore";
+import { useSaveStatusStore } from "@/store/useSaveStatusStore";
 import { useGrammarCheck } from "@/hooks/useGrammarCheck";
 import {
   Tooltip,
@@ -43,6 +50,7 @@ export function EditorHeader({ isMobile }: EditorHeaderProps) {
   const t = useTranslations();
   const undoLabel = t("richEditor.undo");
   const redoLabel = t("richEditor.redo");
+  const saveStatus = useSaveStatusStore((state) => state.status);
 
   const [backupConfigured, setBackupConfigured] = useState<boolean | null>(null);
   const [backupPath, setBackupPath] = useState<string>("");
@@ -86,11 +94,29 @@ export function EditorHeader({ isMobile }: EditorHeaderProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const isModifierPressed = event.metaKey || event.ctrlKey;
-      if (!isModifierPressed || isEditableTarget(event.target)) {
+      if (!isModifierPressed) {
         return;
       }
 
       const key = event.key.toLowerCase();
+      if (key === "s") {
+        event.preventDefault();
+        if (activeResume) {
+          void flushPendingResumeSyncs()
+            .then((flushedResumeIds) =>
+              flushedResumeIds.has(activeResume.id)
+                ? undefined
+                : saveResumeNow(activeResume)
+            )
+            .catch((error) => {
+              console.error("Error saving resume:", error);
+            });
+        }
+        return;
+      }
+
+      if (isEditableTarget(event.target)) return;
+
       if (key === "z" && !event.shiftKey) {
         event.preventDefault();
         undo();
@@ -105,7 +131,7 @@ export function EditorHeader({ isMobile }: EditorHeaderProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [undo, redo]);
+  }, [activeResume, undo, redo]);
 
   return (
     <motion.header
@@ -139,6 +165,26 @@ export function EditorHeader({ isMobile }: EditorHeaderProps) {
               placeholder="简历名称"
             />
             <Edit2 className="w-3.5 h-3.5 absolute right-2.5 text-muted-foreground/40 pointer-events-none transition-colors group-hover:text-muted-foreground/80" />
+          </div>
+
+          <div
+            className={`hidden md:flex items-center gap-1.5 text-xs font-medium ${
+              saveStatus === "error"
+                ? "text-red-500"
+                : saveStatus === "saving"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-emerald-600 dark:text-emerald-500"
+            }`}
+            aria-live="polite"
+          >
+            {saveStatus === "saving" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : saveStatus === "error" ? (
+              <AlertCircle className="h-3.5 w-3.5" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            )}
+            <span>{t(`previewDock.saveStatus.${saveStatus}`)}</span>
           </div>
 
           {/* Backup Status Badge */}

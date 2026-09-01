@@ -8,6 +8,7 @@ declare global {
       resumeStorage: DesktopStorageArea;
       aiConfigStorage: DesktopStorageArea;
       directorySync: DesktopDirectorySync;
+      lifecycle: DesktopLifecycle;
     };
   }
 }
@@ -35,6 +36,10 @@ interface DesktopDirectorySync {
     previousTitle?: string;
     content: string;
   }): Promise<{ fileName: string }>;
+}
+
+interface DesktopLifecycle {
+  onBeforeClose(callback: () => Promise<void> | void): () => void;
 }
 
 interface FilePickerOptions {

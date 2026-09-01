@@ -22,4 +22,18 @@ contextBridge.exposeInMainWorld("magicResumeDesktop", {
     writeResume: (payload) =>
       ipcRenderer.invoke("directory-sync:write-resume", payload),
   },
+  lifecycle: {
+    onBeforeClose: (callback) => {
+      const listener = async () => {
+        try {
+          await callback();
+        } finally {
+          await ipcRenderer.invoke("desktop-lifecycle:close-ready");
+        }
+      };
+      ipcRenderer.on("desktop-lifecycle:before-close", listener);
+      return () =>
+        ipcRenderer.removeListener("desktop-lifecycle:before-close", listener);
+    },
+  },
 });
