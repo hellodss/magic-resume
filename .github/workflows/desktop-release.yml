@@ -34,9 +34,9 @@ jobs:
 
       - name: Verify
         run: |
+          pnpm build
           pnpm typecheck
           pnpm test
-          pnpm build
 
       - name: Build Windows installer
         run: pnpm exec electron-builder --win nsis --publish never
