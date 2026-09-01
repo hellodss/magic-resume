@@ -14,7 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { getConfig, getFileHandle } from "@/utils/fileSystem";
+import { getConfig, getFileHandle, verifyPermission } from "@/utils/fileSystem";
 import { preloadFontFamily } from "@/utils/fonts";
 import { useResumeStore } from "@/store/useResumeStore";
 import { useAIConfigStore } from "@/store/useAIConfigStore";
@@ -61,10 +61,17 @@ export const ResumeWorkbench = () => {
     useEffect(() => {
         const loadSavedConfig = async () => {
             try {
+                const desktopSync = window.magicResumeDesktop?.directorySync;
+                if (desktopSync) {
+                    const path = await desktopSync.getPath();
+                    setHasConfiguredFolder(Boolean(path));
+                    return;
+                }
+
                 const handle = await getFileHandle("syncDirectory");
                 const path = await getConfig("syncDirectoryPath");
                 if (handle && path) {
-                    setHasConfiguredFolder(true);
+                    setHasConfiguredFolder(await verifyPermission(handle));
                 }
             } catch (error) {
                 console.error("Error loading saved config:", error);
